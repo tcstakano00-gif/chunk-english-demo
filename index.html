@@ -400,6 +400,7 @@ async function releaseCompareMicrophone(){
  if(window.compareStream){try{window.compareStream.getTracks().forEach(t=>t.stop())}catch{}window.compareStream=null}
  window.compareRecorder=null;
  await closePromise.catch(()=>{});
+ // 終了通知を待ってから次の音声認識を許可
  compareRecordingBusy=false;
  compareStopPending=false;
 }
@@ -531,8 +532,9 @@ function listen(kind){
   const n=$('voiceNote');if(n)n.textContent='「自分の声を録音」を停止し、録音終了後に「発音」を押してください。';
   return;
  }
- if(window.compareStream){releaseCompareMicrophone();
-  const n=$('voiceNote');if(n)n.textContent='マイクを解放しました。もう一度「発音」を押してください。';return;
+ if(window.compareStream){
+  const n=$('voiceNote');if(n)n.textContent='録音用マイクの解放中です。完了してから再度お試しください。';
+  releaseCompareMicrophone();return;
  }
  resetComparePlayer();
  resetSpeechRecognition();state.latest=null;state.recognitionError='';
