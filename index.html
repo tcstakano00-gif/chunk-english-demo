@@ -383,20 +383,82 @@ const SCENES={normal:{name:'通常',q:'',ja:''},travel:{name:'旅行',q:'Excuse 
 let sceneMode='normal';
 function setScene(m){if(!SCENES[m])return;sceneMode=m;state.answer=0;render()}
 function sceneChooser(){return `<div class="section">会話の場面</div><div class="scene-choice">${Object.entries(SCENES).map(([k,v])=>`<button class="${sceneMode===k?'active':''}" onclick="setScene('${k}')">${v.name}</button>`).join('')}</div><p class="tiny">場面別は定型会話です。AIによる自由な返答生成ではありません。</p>`}
-function startCompareRecording(){
- if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){alert('このブラウザでは録音に対応していません。');return}
- if(window.compareRecorder&&window.compareRecorder.state==='recording'){window.compareRecorder.stop();return}
- navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-  let chunks=[];let options={};if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported('audio/mp4'))options.mimeType='audio/mp4';
-  const recorder=new MediaRecorder(stream,options);window.compareRecorder=recorder;
-  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  recorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop());if(window.compareUrl)URL.revokeObjectURL(window.compareUrl);
-   window.compareUrl=URL.createObjectURL(new Blob(chunks,{type:recorder.mimeType||'audio/webm'}));
-   const a=document.getElementById('comparePlayer');if(a){a.src=window.compareUrl;a.hidden=false}
-   const b=document.getElementById('compareRecord');if(b)b.textContent='🎙 自分の声を録音'};
-  recorder.start();const b=document.getElementById('compareRecord');if(b)b.textContent='■ 録音を停止';
- }).catch(e=>alert('マイクを使用できません：'+e.message))
+let compareRecordingBusy=false;
+let compareStopPending=false;
+function releaseCompareMicrophone(){
+ const recorder=window.compareRecorder;
+ if(recorder&&recorder.state!=='inactive'){
+   compareStopPending=true;
+   try{recorder.requestData()}catch{}
+   try{recorder.stop()}catch{}
+ }
+ if(window.compareStream){
+   window.compareStream.getTracks().forEach(t=>{try{t.stop()}catch{}});
+   window.compareStream=null;
+ }
 }
+function resetComparePlayer(){
+ const player=document.getElementById('comparePlayer');
+ if(player){player.pause();player.removeAttribute('src');player.load();player.hidden=true;}
+ if(window.compareUrl){URL.revokeObjectURL(window.compareUrl);window.compareUrl=null;}
+}
+async function startCompareRecording(){
+ const b=document.getElementById('compareRecord');
+ const note=document.getElementById('voiceNote');
+ if(compareRecordingBusy||compareStopPending){if(note)note.textContent='録音を終了しています。少ししてから操作してください。';return}
+ if(window.compareRecorder?.state==='recording'){
+   compareStopPending=true;
+   if(b){b.disabled=true;b.textContent='録音を終了しています…'}
+   try{window.compareRecorder.requestData()}catch{}
+   try{window.compareRecorder.stop()}catch{releaseCompareMicrophone()}
+   return;
+ }
+ if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
+   if(note)note.textContent='このブラウザは録音に対応していません。';return;
+ }
+ stop();resetComparePlayer();compareRecordingBusy=true;
+ if(b){b.disabled=true;b.textContent='録音を準備中…'}
+ try{
+   const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+   window.compareStream=stream;
+   const types=['audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/webm;codecs=opus','audio/webm'];
+   const audio=document.createElement('audio');
+   const mime=types.find(t=>MediaRecorder.isTypeSupported(t)&&audio.canPlayType(t)!=='');
+   const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
+   if(!audio.canPlayType(recorder.mimeType))throw new Error('録音形式の再生に対応していません。Safariで開き直してください。');
+   window.compareRecorder=recorder;
+   const chunks=[];
+   recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+   recorder.onerror=e=>{if(note)note.textContent='録音エラーが発生しました。もう一度お試しください。';releaseCompareMicrophone()};
+   recorder.onstop=()=>{
+     stream.getTracks().forEach(t=>{try{t.stop()}catch{}});
+     if(window.compareStream===stream)window.compareStream=null;
+     window.compareRecorder=null;
+     compareStopPending=false;
+     const current=document.getElementById('compareRecord');
+     if(current){current.disabled=false;current.textContent='🎙 自分の声を録音'}
+     const blob=new Blob(chunks,{type:recorder.mimeType||mime||''});
+     if(blob.size<200||!audio.canPlayType(blob.type)){
+       if(note)note.textContent='録音データを再生できませんでした。もう一度録音してください。';
+       return;
+     }
+     const player=document.getElementById('comparePlayer');
+     window.compareUrl=URL.createObjectURL(blob);
+     if(player){player.src=window.compareUrl;player.hidden=false;player.load();
+       player.onerror=()=>{player.hidden=true;if(note)note.textContent='音声再生エラーです。録音形式がiPhoneに対応していない可能性があります。';};
+     }
+     if(note)note.textContent='録音が完了しました。「発音」を押すと音声認識で採点できます。';
+   };
+   recorder.start();
+   if(b){b.disabled=false;b.textContent='■ 録音を停止'}
+   if(note)note.textContent='録音中です。終了したら「録音を停止」を押してください。';
+ }catch(e){
+   releaseCompareMicrophone();compareStopPending=false;
+   if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
+   if(note)note.textContent='録音開始エラー：'+e.message;
+ }finally{compareRecordingBusy=false}
+}
+
 function downloadBackup(){
  const payload={format:'chunk-english-backup',version:1,created:new Date().toISOString(),
   saved:JSON.parse(localStorage.getItem(STORE)||'{}'),settings:JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'),extraChunks:JSON.parse(localStorage.getItem('chunkEnglishExtraChunks')||'[]')};
@@ -431,6 +493,16 @@ function scenario(x){
 }
 function target(kind){let x=item(),v=selected(),s=scenario(x);return kind==='chunk'?x.en:kind==='example'?v[0]:kind==='question'?s.question:kind==='aiReply'?expectedReply(s.choices[state.answer][0])[0]:s.choices[state.answer][0]}function speak(kind){if(!('speechSynthesis'in window)){alert('音声再生に対応していません');return}speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(target(kind));u.lang='en-US';u.rate=Number(settings.rate)||.82;u.pitch=Number(settings.voicePitch)||1;speechSynthesis.speak(u)}function setMicIndicator(active){document.querySelectorAll('[data-mic-button]').forEach(b=>{b.classList.toggle('mic-active',active);b.setAttribute('aria-label',active?'マイク使用中・発音を聞き取り中':'発音チェック');b.setAttribute('aria-pressed',String(active));if(!b.dataset.originalText)b.dataset.originalText=b.textContent;b.textContent=active?'🔴 聞き取り中…':b.dataset.originalText});let n=$('voiceNote');if(n&&active)n.textContent='● マイク使用中：発音を聞き取り中です（最大10秒）。'}
 function stop(){setMicIndicator(false);if(recognitionTimeout){clearTimeout(recognitionTimeout);recognitionTimeout=null}if(rec){let old=rec;rec=null;old.onresult=null;old.onend=null;old.onerror=null;try{old.abort()}catch{}}}function finishListening(){if(rec){setMicIndicator(false);try{rec.stop()}catch{stop()}if($("voiceNote"))$("voiceNote").textContent="マイクを停止しています…"}else if($("voiceNote"))$("voiceNote").textContent="マイクは停止しています。"}function norm(s){return String(s).toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9' ]/g,' ').replace(/\s+/g,' ').trim()}function similarity(a,b){let A=norm(a).split(' ').filter(Boolean),B=norm(b).split(' ').filter(Boolean);if(!B.length)return 0;let dp=Array.from({length:A.length+1},()=>Array(B.length+1).fill(0));for(let i=1;i<=A.length;i++)for(let j=1;j<=B.length;j++)dp[i][j]=A[i-1]===B[j-1]?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);return Math.round(100*2*dp[A.length][B.length]/Math.max(1,A.length+B.length))}function listen(kind){
+ // 聞き比べ用録音・再生を完全に停止してから音声認識を開始
+ if(compareRecordingBusy||compareStopPending){
+   const n=$('voiceNote');if(n)n.textContent='録音の準備中です。録音を停止してから「発音」を押してください。';
+   return;
+ }
+ const recording=window.compareRecorder?.state==='recording';
+ if(recording){releaseCompareMicrophone();const n=$('voiceNote');if(n)n.textContent='録音を停止しました。録音完了後にもう一度「発音」を押してください。';return;}
+ if(window.compareStream)releaseCompareMicrophone();
+ const player=document.getElementById('comparePlayer');
+ if(player&&!player.paused)player.pause();
  stop();state.latest=null;const R=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!R){state.recognitionError='このブラウザは音声認識に対応していません。Safariのバージョンとマイクの許可をご確認ください。';go('results');return}
  const r=new R();rec=r;r.lang='en-US';r.continuous=false;r.interimResults=true;
