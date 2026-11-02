@@ -429,7 +429,7 @@ async function startCompareRecording(){
    window.compareRecorder=recorder;
    const chunks=[];
    recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
-   recorder.onerror=e=>{if(note)note.textContent='録音エラーが発生しました。もう一度お試しください。';releaseCompareMicrophone()};
+   recorder.onerror=e=>{if(note)note.textContent='録音エラーが発生しました。もう一度お試しください。';releaseCompareMicrophone();compareStopPending=false;compareRecordingBusy=false;window.compareRecorder=null};
    recorder.onstop=()=>{
      stream.getTracks().forEach(t=>{try{t.stop()}catch{}});
      if(window.compareStream===stream)window.compareStream=null;
@@ -492,28 +492,63 @@ function scenario(x){
  return {question:p[0],ja:p[1],choices};
 }
 function target(kind){let x=item(),v=selected(),s=scenario(x);return kind==='chunk'?x.en:kind==='example'?v[0]:kind==='question'?s.question:kind==='aiReply'?expectedReply(s.choices[state.answer][0])[0]:s.choices[state.answer][0]}function speak(kind){if(!('speechSynthesis'in window)){alert('音声再生に対応していません');return}speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(target(kind));u.lang='en-US';u.rate=Number(settings.rate)||.82;u.pitch=Number(settings.voicePitch)||1;speechSynthesis.speak(u)}function setMicIndicator(active){document.querySelectorAll('[data-mic-button]').forEach(b=>{b.classList.toggle('mic-active',active);b.setAttribute('aria-label',active?'マイク使用中・発音を聞き取り中':'発音チェック');b.setAttribute('aria-pressed',String(active));if(!b.dataset.originalText)b.dataset.originalText=b.textContent;b.textContent=active?'🔴 聞き取り中…':b.dataset.originalText});let n=$('voiceNote');if(n&&active)n.textContent='● マイク使用中：発音を聞き取り中です（最大10秒）。'}
-function stop(){setMicIndicator(false);if(recognitionTimeout){clearTimeout(recognitionTimeout);recognitionTimeout=null}if(rec){let old=rec;rec=null;old.onresult=null;old.onend=null;old.onerror=null;try{old.abort()}catch{}}}function finishListening(){if(rec){setMicIndicator(false);try{rec.stop()}catch{stop()}if($("voiceNote"))$("voiceNote").textContent="マイクを停止しています…"}else if($("voiceNote"))$("voiceNote").textContent="マイクは停止しています。"}function norm(s){return String(s).toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9' ]/g,' ').replace(/\s+/g,' ').trim()}function similarity(a,b){let A=norm(a).split(' ').filter(Boolean),B=norm(b).split(' ').filter(Boolean);if(!B.length)return 0;let dp=Array.from({length:A.length+1},()=>Array(B.length+1).fill(0));for(let i=1;i<=A.length;i++)for(let j=1;j<=B.length;j++)dp[i][j]=A[i-1]===B[j-1]?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);return Math.round(100*2*dp[A.length][B.length]/Math.max(1,A.length+B.length))}function listen(kind){
- // 聞き比べ用録音・再生を完全に停止してから音声認識を開始
- if(compareRecordingBusy||compareStopPending){
-   const n=$('voiceNote');if(n)n.textContent='録音の準備中です。録音を停止してから「発音」を押してください。';
-   return;
+function stop(){resetSpeechRecognition()}function finishListening(){if(rec){setMicIndicator(false);try{rec.stop()}catch{stop()}if($("voiceNote"))$("voiceNote").textContent="マイクを停止しています…"}else if($("voiceNote"))$("voiceNote").textContent="マイクは停止しています。"}function norm(s){return String(s).toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9' ]/g,' ').replace(/\s+/g,' ').trim()}function similarity(a,b){let A=norm(a).split(' ').filter(Boolean),B=norm(b).split(' ').filter(Boolean);if(!B.length)return 0;let dp=Array.from({length:A.length+1},()=>Array(B.length+1).fill(0));for(let i=1;i<=A.length;i++)for(let j=1;j<=B.length;j++)dp[i][j]=A[i-1]===B[j-1]?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);return Math.round(100*2*dp[A.length][B.length]/Math.max(1,A.length+B.length))}let recognitionSession=0;
+let micRecoveryUntil=0;
+function resetSpeechRecognition(){
+ recognitionSession++;
+ if(recognitionTimeout){clearTimeout(recognitionTimeout);recognitionTimeout=null}
+ const old=rec;rec=null;
+ if(old){old.onresult=null;old.onerror=null;old.onend=null;try{old.abort()}catch{}}
+ setMicIndicator(false);
+}
+function listen(kind){
+ // 音声認識と比較録音を同時に使用しない
+ if(compareRecordingBusy||compareStopPending||window.compareRecorder?.state==='recording'){
+  const n=$('voiceNote');if(n)n.textContent='「自分の声を録音」を停止し、録音終了後に「発音」を押してください。';
+  return;
  }
- const recording=window.compareRecorder?.state==='recording';
- if(recording){releaseCompareMicrophone();const n=$('voiceNote');if(n)n.textContent='録音を停止しました。録音完了後にもう一度「発音」を押してください。';return;}
- if(window.compareStream)releaseCompareMicrophone();
- const player=document.getElementById('comparePlayer');
- if(player&&!player.paused)player.pause();
- stop();state.latest=null;const R=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!R){state.recognitionError='このブラウザは音声認識に対応していません。Safariのバージョンとマイクの許可をご確認ください。';go('results');return}
- const r=new R();rec=r;r.lang='en-US';r.continuous=false;r.interimResults=true;
- let heard='',failure=false,errorMessage='';state.recognitionError='';const n=$('voiceNote');if(n)n.textContent='聞き取り中です。発音後は自動で停止します（最長10秒）。';setMicIndicator(true);
- r.onresult=e=>{if(rec!==r)return;let str='',isFinal=false;for(let i=0;i<e.results.length;i++){str+=e.results[i][0].transcript+' ';if(e.results[i].isFinal)isFinal=true}heard=str.trim();if($('transcript'))$('transcript').textContent='認識中：'+heard;if(isFinal){try{r.stop()}catch{}}};
- r.onerror=e=>{if(rec!==r)return;failure=true;errorMessage='音声認識エラー：'+e.error+'。マイクの許可・通信状態をご確認ください。';setMicIndicator(false);if($('voiceNote'))$('voiceNote').textContent='音声認識エラー：'+e.error+'。マイクの許可や通信状態をご確認ください。';try{r.abort()}catch{}};
- r.onend=()=>{if(rec!==r)return;setMicIndicator(false);rec=null;if(recognitionTimeout){clearTimeout(recognitionTimeout);recognitionTimeout=null}if(!heard||failure){state.recognitionError=errorMessage||'音声を認識できませんでした。もう一度「発音」を押してお試しください。';go('results');return}let t=target(kind),score=similarity(t,heard),feedback=score>=95?'すごくいいです！かなりしっかり伝わっています。この調子で、リズムも少し意識するとさらに自然です。':score>=70?'なかなか良いです！あと少しです。語尾やつながりを意識して、もう一回言ってみましょう。':'大丈夫です。まだ伸びしろがあります！短く区切って、ゆっくりはっきり言うとグッと良くなります。';state.recognitionError='';state.latest={kind,target:t,heard,score,feedback,date:new Date().toLocaleString('ja-JP')};state.history.push({...state.latest,id:state.id});
+ if(window.compareStream){releaseCompareMicrophone();
+  const n=$('voiceNote');if(n)n.textContent='マイクを解放しました。もう一度「発音」を押してください。';return;
+ }
+ const player=$('comparePlayer');if(player&&!player.paused)player.pause();
+ resetSpeechRecognition();state.latest=null;state.recognitionError='';
+ const R=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!R){state.recognitionError='このブラウザでは音声認識に対応していません。';go('results');return}
+ const r=new R(),session=++recognitionSession;
+ rec=r;r.lang='en-US';r.continuous=false;r.interimResults=false;
+ let heard='',errorCode='',started=false,completed=false;
+ const note=$('voiceNote');if(note)note.textContent='マイクを準備しています…';
+ r.onstart=()=>{if(rec!==r||session!==recognitionSession)return;started=true;setMicIndicator(true);const n=$('voiceNote');if(n)n.textContent='聞き取り中です。英文を話してください。'};
+ r.onresult=e=>{if(rec!==r||session!==recognitionSession)return;
+  let words=[];for(let i=0;i<e.results.length;i++)words.push(e.results[i][0].transcript);
+  heard=words.join(' ').trim();if($('transcript'))$('transcript').textContent='認識中：'+heard;
+ };
+ r.onerror=e=>{if(rec!==r||session!==recognitionSession)return;
+  // abortedは意図的な停止やブラウザ側の中断でも発生する。再度abort()しない
+  errorCode=String(e.error||'unknown');setMicIndicator(false);
+ };
+ r.onend=()=>{if(rec!==r||session!==recognitionSession)return;
+  completed=true;rec=null;setMicIndicator(false);
+  if(recognitionTimeout){clearTimeout(recognitionTimeout);recognitionTimeout=null}
+  if(!heard||errorCode){
+   const msg=errorCode==='aborted'?'音声認識が中断されました。マイクを一度停止して、もう一度「発音」を押してください。Safariで続く場合はページを開き直してください。':
+   errorCode==='not-allowed'?'マイクまたは音声認識が許可されていません。Safariのサイト設定をご確認ください。':
+   errorCode==='audio-capture'?'マイクを使用できません。他の録音を停止してください。':
+   errorCode==='network'?'音声認識の通信エラーです。インターネット接続をご確認ください。':
+   errorCode==='no-speech'?'声を聞き取れませんでした。もう一度お試しください。':
+   errorCode?'音声認識エラー：'+errorCode+'。もう一度お試しください。':'声を聞き取れませんでした。もう一度お試しください。';
+   state.recognitionError=msg;go('results');return;
+  }
+  let t=target(kind),score=similarity(t,heard),feedback=score>=95?'すごくいいです！かなりしっかり伝わっています。この調子で、リズムも少し意識するとさらに自然です。':score>=70?'なかなか良いです！あと少しです。語尾やつながりを意識して、もう一回言ってみましょう。':'大丈夫です。まだ伸びしろがあります！短く区切って、ゆっくりはっきり言うとグッと良くなります。';state.recognitionError='';state.latest={kind,target:t,heard,score,feedback,date:new Date().toLocaleString('ja-JP')};state.history.push({...state.latest,id:state.id});
 let k=String(state.id),prev=state.chunkProgress[k]||{best:0,count:0};
 state.chunkProgress[k]={best:Math.max(Number(prev.best)||0,score),count:(Number(prev.count)||0)+1,last:score,lastDate:state.latest.date};
-persist();go('results')};
- try{r.start();recognitionTimeout=setTimeout(()=>{if(rec===r){try{r.stop()}catch{stop()}}},10000)}catch(e){stop();if(n)n.textContent='音声認識を開始できません：'+e.message}
+persist();go('results');
+ };
+ try{
+  r.start();recognitionTimeout=setTimeout(()=>{if(rec===r){try{r.stop()}catch{resetSpeechRecognition()}}},12000);
+ }catch(e){
+  resetSpeechRecognition();state.recognitionError='音声認識を開始できませんでした：'+e.message+'。ページを再読み込みしてお試しください。';go('results');
+ }
 }
 window.addEventListener('pagehide',()=>stop());document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});
 function exportHistory(){let blob=new Blob([JSON.stringify(state.history,null,2)],{type:'application/json'}),a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download='chunk-english-history.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),3000)}
