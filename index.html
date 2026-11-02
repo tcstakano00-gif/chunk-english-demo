@@ -344,7 +344,7 @@ function updateFooter(){
  if(state.page==='history')active='navHistory';
  if(state.page==='settings')active='navSettings';
  $(active)?.classList.add('active');
-}function go(page){stop();if(page==='conversation'&&state.page!=='conversation'){state.answer=1;}state.page=page;state.heard='';persist();render();window.scrollTo(0,0)}function selectChunk(id){state.id=id;state.variant=0;state.answer=0;go('pron')}function moveChunk(delta){let i=CHUNKS.findIndex(x=>x.id===state.id);state.id=CHUNKS[(i+delta+CHUNKS.length)%CHUNKS.length].id;state.variant=0;state.answer=0;state.latest=null;go(['pron','example','conversation'].includes(state.page)?state.page:'pron')}function previous(){moveChunk(-1)}function next(){moveChunk(1)}function chooseVariant(i){state.variant=i;state.answer=0;state.latest=null;go('example')}function chooseAnswer(i){state.answer=i;go('conversation')}const DICT_READINGS=["いいですね", "それはいいですね", "なるほど", "わかりました", "もんだいありません", "もちろんです", "まだです", "そうでもありません", "そのとおりです", "そうです", "だいじょうぶです", "げんきです", "つかれています", "おなかがすきました", "のどがかわきました", "じゅんびできました", "いそがしいです", "じかんがあります", "しんぱいです", "きぶんがよくなりました", "おげんきですか", "あなたはどうですか", "これはなんですか", "どういういみですか", "ほんとうですか", "ほんとうですか", "どうしてだめですか", "なにがありましたか", "それはどこですか", "いくらですか", "わかりません", "かくしんがありません", "まったくわかりません", "ええと", "かくにんさせてください", "もういちどおねがいします", "もういちどいってください", "ゆっくりはなしてください", "りかいしました", "なるほどなっとくです", "てつだってもらえますか", "していただけますか", "おまちください", "しょうしょうおまちください", "しらせてください", "ちょっとまってください", "たずねてもいいですか", "おねがいをきいてください", "どうぞおさきに", "ゆっくりでだいじょうぶです", "したいです", "したいです", "するひつようがあります", "しなければなりません", "するつもりです", "するよていです", "そうだといいですね", "またあとで", "きょうはやめておきます", "やってみます", "いきましょう", "ためしてみましょう", "はどうですか", "はいかがですか", "したいですか", "しませんか", "それでいきましょう", "それでつごうがいいです", "どちらでもいいです", "おまかせします", "むかっているところです", "もどりました", "でかけます", "もうすぐおわります", "さがしています", "まっています", "とりくんでいます", "たったいまおわりました", "わすれました", "おぼえています", "ところで", "じつは", "たとえば", "そうおもいます", "そうはおもいません", "ばあいによります", "いつもどおり", "いまのところじゅんちょうです", "とにかく", "それでおもいだしました", "ほんとうにありがとうございます", "どういたしまして", "いいえけっこうです", "すみません", "ごめんなさい", "だいじょうぶですよ", "おげんきで", "またあとで", "よいいちにちを", "はじめまして"];
+}function go(page){stop();if(typeof resetComparePlayer==='function')resetComparePlayer();if(page==='conversation'&&state.page!=='conversation'){state.answer=1;}state.page=page;state.heard='';persist();render();window.scrollTo(0,0)}function selectChunk(id){state.id=id;state.variant=0;state.answer=0;go('pron')}function moveChunk(delta){let i=CHUNKS.findIndex(x=>x.id===state.id);state.id=CHUNKS[(i+delta+CHUNKS.length)%CHUNKS.length].id;state.variant=0;state.answer=0;state.latest=null;go(['pron','example','conversation'].includes(state.page)?state.page:'pron')}function previous(){moveChunk(-1)}function next(){moveChunk(1)}function chooseVariant(i){state.variant=i;state.answer=0;state.latest=null;go('example')}function chooseAnswer(i){state.answer=i;go('conversation')}const DICT_READINGS=["いいですね", "それはいいですね", "なるほど", "わかりました", "もんだいありません", "もちろんです", "まだです", "そうでもありません", "そのとおりです", "そうです", "だいじょうぶです", "げんきです", "つかれています", "おなかがすきました", "のどがかわきました", "じゅんびできました", "いそがしいです", "じかんがあります", "しんぱいです", "きぶんがよくなりました", "おげんきですか", "あなたはどうですか", "これはなんですか", "どういういみですか", "ほんとうですか", "ほんとうですか", "どうしてだめですか", "なにがありましたか", "それはどこですか", "いくらですか", "わかりません", "かくしんがありません", "まったくわかりません", "ええと", "かくにんさせてください", "もういちどおねがいします", "もういちどいってください", "ゆっくりはなしてください", "りかいしました", "なるほどなっとくです", "てつだってもらえますか", "していただけますか", "おまちください", "しょうしょうおまちください", "しらせてください", "ちょっとまってください", "たずねてもいいですか", "おねがいをきいてください", "どうぞおさきに", "ゆっくりでだいじょうぶです", "したいです", "したいです", "するひつようがあります", "しなければなりません", "するつもりです", "するよていです", "そうだといいですね", "またあとで", "きょうはやめておきます", "やってみます", "いきましょう", "ためしてみましょう", "はどうですか", "はいかがですか", "したいですか", "しませんか", "それでいきましょう", "それでつごうがいいです", "どちらでもいいです", "おまかせします", "むかっているところです", "もどりました", "でかけます", "もうすぐおわります", "さがしています", "まっています", "とりくんでいます", "たったいまおわりました", "わすれました", "おぼえています", "ところで", "じつは", "たとえば", "そうおもいます", "そうはおもいません", "ばあいによります", "いつもどおり", "いまのところじゅんちょうです", "とにかく", "それでおもいだしました", "ほんとうにありがとうございます", "どういたしまして", "いいえけっこうです", "すみません", "ごめんなさい", "だいじょうぶですよ", "おげんきで", "またあとで", "よいいちにちを", "はじめまして"];
 let dictionaryMode='en';let dictionaryLetter='all';
 const JA_ROWS=[['あ','あいうえお'],['か','かきくけこがぎぐげご'],['さ','さしすせそざじずぜぞ'],['た','たちつてとだぢづでど'],['な','なにぬねの'],['は','はひふへほばびぶべぼぱぴぷぺぽ'],['ま','まみむめも'],['や','やゆよ'],['ら','らりるれろ'],['わ','わをん']];
 function dictRow(reading){const ch=reading.charAt(0);return JA_ROWS.find(row=>row[1].includes(ch))?.[0]||'他';}
@@ -439,6 +439,7 @@ async function finishCompareRecording(){
   if(player){
    player.onerror=()=>{if(note)note.textContent='録音音声を再生できませんでした。Safariでページを再読み込みしてください。'};
    player.src=window.compareUrl;player.hidden=false;player.load();
+   player.onended=()=>{player.pause();player.hidden=true;if(note)note.textContent='再生が終わりました。もう一度聞く場合は「自分の声を録音」から録音してください。';};
   }
   if(note)note.textContent='録音完了です。下の再生ボタンで聞き比べ、次に「発音」で採点できます。';
  }catch(e){if(note)note.textContent='録音保存エラー：'+e.message}
@@ -530,7 +531,7 @@ function listen(kind){
  if(window.compareStream){releaseCompareMicrophone();
   const n=$('voiceNote');if(n)n.textContent='マイクを解放しました。もう一度「発音」を押してください。';return;
  }
- const player=$('comparePlayer');if(player&&!player.paused)player.pause();
+ const player=$('comparePlayer');if(player){if(!player.paused)player.pause();player.hidden=true;}
  resetSpeechRecognition();state.latest=null;state.recognitionError='';
  const R=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!R){state.recognitionError='このブラウザでは音声認識に対応していません。';go('results');return}
@@ -544,8 +545,17 @@ function listen(kind){
   heard=words.join(' ').trim();if($('transcript'))$('transcript').textContent='認識中：'+heard;
  };
  r.onerror=e=>{if(rec!==r||session!==recognitionSession)return;
-  // abortedは意図的な停止やブラウザ側の中断でも発生する。再度abort()しない
-  errorCode=String(e.error||'unknown');setMicIndicator(false);
+   errorCode=String(e.error||'unknown');setMicIndicator(false);
+   // iOSではonendが来ない場合もあるため、errorだけで復帰可能にする
+   const messages={
+    'not-allowed':'Safariで音声認識が許可されていません。アドレスバーのサイト設定をご確認ください。',
+    'service-not-allowed':'Safariの音声認識サービスが利用できません。Safariの設定と通信状態をご確認ください。',
+    'audio-capture':'音声認識でマイクを取得できませんでした。他の録音を終了してください。',
+    'network':'音声認識サービスへ接続できません。通信状態をご確認ください。',
+    'aborted':'Safariが音声認識を中断しました。通常の録音は利用できますが、採点には音声認識サービスが必要です。',
+    'no-speech':'音声を聞き取れませんでした。再度お試しください。'};
+   state.recognitionError=messages[errorCode]||'音声認識エラー：'+errorCode;
+   resetSpeechRecognition();go('results');
  };
  r.onend=()=>{if(rec!==r||session!==recognitionSession)return;
   completed=true;rec=null;setMicIndicator(false);
@@ -565,7 +575,10 @@ state.chunkProgress[k]={best:Math.max(Number(prev.best)||0,score),count:(Number(
 persist();go('results');
  };
  try{
-  r.start();recognitionTimeout=setTimeout(()=>{if(rec===r){try{r.stop()}catch{resetSpeechRecognition()}}},12000);
+  r.start();recognitionTimeout=setTimeout(()=>{if(rec===r){
+   if(!started){state.recognitionError='Safariの音声認識が8秒以内に開始しませんでした。録音は可能でも、Safariの音声認識サービスが利用できない場合があります。ブラウザを再起動し、通信状態をご確認ください。';resetSpeechRecognition();go('results');}
+   else {try{r.stop()}catch{resetSpeechRecognition()}}
+  }},8000);
  }catch(e){
   resetSpeechRecognition();state.recognitionError='音声認識を開始できませんでした：'+e.message+'。ページを再読み込みしてお試しください。';go('results');
  }
