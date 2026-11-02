@@ -206,7 +206,11 @@ function changeSetting(key,value){settings[key]=value;saveSettings();applySettin
 function applySettings(){
  document.documentElement.style.setProperty('--study-text-scale',String(settings.textScale));
  document.documentElement.classList.toggle('no-romanji',!settings.showRomanji);
- const css=(selector,val,original)=>{let src=val==='custom'?settings[original]:(val==='ai'?'./avatar-ai.png':val==='you'?'./avatar-you.png':null);return src?`${selector}{background-image:url("${src}")!important;background-size:cover!important;background-position:center!important}${selector}::before{display:none!important}`:''};
+ const css=(selector,val,original)=>{
+  const sources={ai:'./avatar-ai.png',you:'./avatar-you.png',style4:'./avatar-style-4.svg',style5:'./avatar-style-5.svg'};
+  const src=val==='custom'?settings[original]:sources[val];
+  return src?`${selector}{background-image:url("${src}")!important;background-size:cover!important;background-position:center!important;filter:none!important}${selector}::before{display:none!important}`:'';
+ };
  let style=document.getElementById('avatar-settings-style');
  if(!style){style=document.createElement('style');style.id='avatar-settings-style';document.head.appendChild(style)}
  style.textContent=css('.avatar.teacher,.person.coach',settings.coachAvatar,'customCoach')+css('.avatar.bot,.avatar.duo',settings.aiAvatar,'customAi')+css('.avatar.student',settings.youAvatar,'customYou');
@@ -268,12 +272,14 @@ else if(state.page==='settings'){
  <label class="settings-check"><input type="checkbox" ${settings.showRomanji?'checked':''} onchange="changeSetting('showRomanji',this.checked)"> ローマ字の発音ガイドを表示する</label>
  <label>英文の文字サイズ</label><select onchange="changeSetting('textScale',Number(this.value))"><option value="0.9" ${settings.textScale==0.9?'selected':''}>小さめ</option><option value="1" ${settings.textScale==1?'selected':''}>標準</option><option value="1.12" ${settings.textScale==1.12?'selected':''}>大きめ</option></select>
  <h2 style="margin-top:16px">人物アイコン</h2>
- <p class="tiny">アイコンごとに画像を選択できます。写真などを使用する場合は、円形に切り抜かれて表示されます。</p>
+ <p class="tiny">各アイコンを5種類から選べます。自分の画像も使用でき、円形に切り抜いて表示します。</p>
  ${[['Coach','発音コーチ','coachAvatar'],['Ai','AI会話のAI','aiAvatar'],['You','AI会話のあなた','youAvatar']].map(([key,label,prop])=>`<div class="avatar-setting"><label>${label}</label>
  <select onchange="changeSetting('${prop}',this.value)">
  <option value="original" ${settings[prop]==='original'?'selected':''}>発音コーチ</option>
  <option value="ai" ${settings[prop]==='ai'?'selected':''}>AIの人物</option>
  <option value="you" ${settings[prop]==='you'?'selected':''}>学習者の人物</option>
+ <option value="style4" ${settings[prop]==='style4'?'selected':''}>人物4（グリーン）</option>
+ <option value="style5" ${settings[prop]==='style5'?'selected':''}>人物5（パープル）</option>
  <option value="custom" ${settings[prop]==='custom'?'selected':''} ${settings['custom'+key]?'':'disabled'}>アップロードした画像</option>
  </select><input type="file" accept="image/*" aria-label="${label}の画像を選択" onchange="uploadAvatar('${key}',this)"></div>`).join('')}
  <button class="btn outline full" style="margin-top:12px" onclick="settings={...DEFAULT_SETTINGS};saveSettings();applySettings();render()">設定を初期値に戻す</button>
