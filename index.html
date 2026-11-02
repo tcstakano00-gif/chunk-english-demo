@@ -385,77 +385,97 @@ function setScene(m){if(!SCENES[m])return;sceneMode=m;state.answer=0;render()}
 function sceneChooser(){return `<div class="section">会話の場面</div><div class="scene-choice">${Object.entries(SCENES).map(([k,v])=>`<button class="${sceneMode===k?'active':''}" onclick="setScene('${k}')">${v.name}</button>`).join('')}</div><p class="tiny">場面別は定型会話です。AIによる自由な返答生成ではありません。</p>`}
 let compareRecordingBusy=false;
 let compareStopPending=false;
+let compareCapture=null;
 function releaseCompareMicrophone(){
- const recorder=window.compareRecorder;
- if(recorder&&recorder.state!=='inactive'){
-   compareStopPending=true;
-   try{recorder.requestData()}catch{}
-   try{recorder.stop()}catch{}
+ const c=compareCapture;
+ if(c){
+  try{c.processor.onaudioprocess=null;c.processor.disconnect()}catch{}
+  try{c.source.disconnect()}catch{}
+  try{c.silence.disconnect()}catch{}
+  try{c.stream.getTracks().forEach(t=>t.stop())}catch{}
+  try{c.context.close()}catch{}
+  compareCapture=null;
  }
- if(window.compareStream){
-   window.compareStream.getTracks().forEach(t=>{try{t.stop()}catch{}});
-   window.compareStream=null;
- }
+ if(window.compareStream){window.compareStream.getTracks().forEach(t=>{try{t.stop()}catch{}});window.compareStream=null}
+ window.compareRecorder=null;
+ compareRecordingBusy=false;compareStopPending=false;
 }
 function resetComparePlayer(){
  const player=document.getElementById('comparePlayer');
  if(player){player.pause();player.removeAttribute('src');player.load();player.hidden=true;}
- if(window.compareUrl){URL.revokeObjectURL(window.compareUrl);window.compareUrl=null;}
+ if(window.compareUrl){URL.revokeObjectURL(window.compareUrl);window.compareUrl=null}
+}
+function pcmToWav(parts,rate){
+ const len=parts.reduce((n,p)=>n+p.length,0);
+ const buffer=new ArrayBuffer(44+len*2),v=new DataView(buffer);
+ const word=(offset,str)=>{for(let i=0;i<str.length;i++)v.setUint8(offset+i,str.charCodeAt(i))};
+ word(0,'RIFF');v.setUint32(4,36+len*2,true);word(8,'WAVE');word(12,'fmt ');
+ v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+ v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);
+ v.setUint16(34,16,true);word(36,'data');v.setUint32(40,len*2,true);
+ let offset=44;
+ for(const part of parts)for(let i=0;i<part.length;i++){
+  const x=Math.max(-1,Math.min(1,part[i]));v.setInt16(offset,x<0?x*32768:x*32767,true);offset+=2;
+ }
+ return new Blob([buffer],{type:'audio/wav'});
+}
+async function finishCompareRecording(){
+ const c=compareCapture;if(!c||compareStopPending)return;
+ compareStopPending=true;
+ const note=document.getElementById('voiceNote');
+ const b=document.getElementById('compareRecord');
+ if(b){b.disabled=true;b.textContent='録音を保存しています…'}
+ // Stop capture before encoding; use PCM WAV to avoid Safari MP4/WebM container errors.
+ const parts=c.parts.slice(),rate=c.context.sampleRate;
+ releaseCompareMicrophone();
+ if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
+ const samples=parts.reduce((n,x)=>n+x.length,0);
+ if(samples<rate/5){if(note)note.textContent='録音が短すぎます。1秒以上話してから停止してください。';return}
+ try{
+  const wav=pcmToWav(parts,rate);
+  if(window.compareUrl)URL.revokeObjectURL(window.compareUrl);
+  window.compareUrl=URL.createObjectURL(wav);
+  const player=document.getElementById('comparePlayer');
+  if(player){
+   player.onerror=()=>{if(note)note.textContent='録音音声を再生できませんでした。Safariでページを再読み込みしてください。'};
+   player.src=window.compareUrl;player.hidden=false;player.load();
+  }
+  if(note)note.textContent='録音完了です。下の再生ボタンで聞き比べ、次に「発音」で採点できます。';
+ }catch(e){if(note)note.textContent='録音保存エラー：'+e.message}
 }
 async function startCompareRecording(){
  const b=document.getElementById('compareRecord');
  const note=document.getElementById('voiceNote');
- if(compareRecordingBusy||compareStopPending){if(note)note.textContent='録音を終了しています。少ししてから操作してください。';return}
- if(window.compareRecorder?.state==='recording'){
-   compareStopPending=true;
-   if(b){b.disabled=true;b.textContent='録音を終了しています…'}
-   try{window.compareRecorder.requestData()}catch{}
-   try{window.compareRecorder.stop()}catch{releaseCompareMicrophone()}
-   return;
+ if(compareCapture){await finishCompareRecording();return}
+ if(compareRecordingBusy||compareStopPending)return;
+ if(!navigator.mediaDevices?.getUserMedia||!(window.AudioContext||window.webkitAudioContext)){
+  if(note)note.textContent='この環境では録音に対応していません。Safariで直接開いてください。';return;
  }
- if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
-   if(note)note.textContent='このブラウザは録音に対応していません。';return;
- }
- stop();resetComparePlayer();compareRecordingBusy=true;
+ resetSpeechRecognition();resetComparePlayer();compareRecordingBusy=true;
  if(b){b.disabled=true;b.textContent='録音を準備中…'}
+ let stream=null,context=null;
  try{
-   const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-   window.compareStream=stream;
-   const types=['audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/webm;codecs=opus','audio/webm'];
-   const audio=document.createElement('audio');
-   const mime=types.find(t=>MediaRecorder.isTypeSupported(t)&&audio.canPlayType(t)!=='');
-   const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
-   if(!audio.canPlayType(recorder.mimeType))throw new Error('録音形式の再生に対応していません。Safariで開き直してください。');
-   window.compareRecorder=recorder;
-   const chunks=[];
-   recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
-   recorder.onerror=e=>{if(note)note.textContent='録音エラーが発生しました。もう一度お試しください。';releaseCompareMicrophone();compareStopPending=false;compareRecordingBusy=false;window.compareRecorder=null};
-   recorder.onstop=()=>{
-     stream.getTracks().forEach(t=>{try{t.stop()}catch{}});
-     if(window.compareStream===stream)window.compareStream=null;
-     window.compareRecorder=null;
-     compareStopPending=false;
-     const current=document.getElementById('compareRecord');
-     if(current){current.disabled=false;current.textContent='🎙 自分の声を録音'}
-     const blob=new Blob(chunks,{type:recorder.mimeType||mime||''});
-     if(blob.size<200||!audio.canPlayType(blob.type)){
-       if(note)note.textContent='録音データを再生できませんでした。もう一度録音してください。';
-       return;
-     }
-     const player=document.getElementById('comparePlayer');
-     window.compareUrl=URL.createObjectURL(blob);
-     if(player){player.src=window.compareUrl;player.hidden=false;player.load();
-       player.onerror=()=>{player.hidden=true;if(note)note.textContent='音声再生エラーです。録音形式がiPhoneに対応していない可能性があります。';};
-     }
-     if(note)note.textContent='録音が完了しました。「発音」を押すと音声認識で採点できます。';
-   };
-   recorder.start();
-   if(b){b.disabled=false;b.textContent='■ 録音を停止'}
-   if(note)note.textContent='録音中です。終了したら「録音を停止」を押してください。';
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const AC=window.AudioContext||window.webkitAudioContext;
+  context=new AC();await context.resume();
+  const source=context.createMediaStreamSource(stream);
+  const processor=context.createScriptProcessor(4096,1,1);
+  const silence=context.createGain();silence.gain.value=0;
+  const parts=[];
+  processor.onaudioprocess=e=>{
+   if(!compareCapture)return;
+   parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  source.connect(processor);processor.connect(silence);silence.connect(context.destination);
+  compareCapture={stream,context,source,processor,silence,parts};window.compareStream=stream;
+  if(b){b.disabled=false;b.textContent='■ 録音を停止'}
+  if(note)note.textContent='録音中です。英文を話してから「録音を停止」を押してください。';
  }catch(e){
-   releaseCompareMicrophone();compareStopPending=false;
-   if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
-   if(note)note.textContent='録音開始エラー：'+e.message;
+  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{context?.close()}catch{}
+  releaseCompareMicrophone();
+  if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
+  if(note)note.textContent='録音開始エラー：'+e.message;
  }finally{compareRecordingBusy=false}
 }
 
@@ -503,7 +523,7 @@ function resetSpeechRecognition(){
 }
 function listen(kind){
  // 音声認識と比較録音を同時に使用しない
- if(compareRecordingBusy||compareStopPending||window.compareRecorder?.state==='recording'){
+ if(compareRecordingBusy||compareStopPending||compareCapture){
   const n=$('voiceNote');if(n)n.textContent='「自分の声を録音」を停止し、録音終了後に「発音」を押してください。';
   return;
  }
