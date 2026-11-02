@@ -386,19 +386,22 @@ function sceneChooser(){return `<div class="section">会話の場面</div><div c
 let compareRecordingBusy=false;
 let compareStopPending=false;
 let compareCapture=null;
-function releaseCompareMicrophone(){
+async function releaseCompareMicrophone(){
  const c=compareCapture;
+ compareCapture=null;
+ let closePromise=Promise.resolve();
  if(c){
   try{c.processor.onaudioprocess=null;c.processor.disconnect()}catch{}
   try{c.source.disconnect()}catch{}
   try{c.silence.disconnect()}catch{}
   try{c.stream.getTracks().forEach(t=>t.stop())}catch{}
-  try{c.context.close()}catch{}
-  compareCapture=null;
+  try{closePromise=c.context.close()}catch{}
  }
- if(window.compareStream){window.compareStream.getTracks().forEach(t=>{try{t.stop()}catch{}});window.compareStream=null}
+ if(window.compareStream){try{window.compareStream.getTracks().forEach(t=>t.stop())}catch{}window.compareStream=null}
  window.compareRecorder=null;
- compareRecordingBusy=false;compareStopPending=false;
+ await closePromise.catch(()=>{});
+ compareRecordingBusy=false;
+ compareStopPending=false;
 }
 function resetComparePlayer(){
  const player=document.getElementById('comparePlayer');
@@ -427,7 +430,7 @@ async function finishCompareRecording(){
  if(b){b.disabled=true;b.textContent='録音を保存しています…'}
  // Stop capture before encoding; use PCM WAV to avoid Safari MP4/WebM container errors.
  const parts=c.parts.slice(),rate=c.context.sampleRate;
- releaseCompareMicrophone();
+ await releaseCompareMicrophone();
  if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
  const samples=parts.reduce((n,x)=>n+x.length,0);
  if(samples<rate/5){if(note)note.textContent='録音が短すぎます。1秒以上話してから停止してください。';return}
@@ -441,7 +444,7 @@ async function finishCompareRecording(){
    player.src=window.compareUrl;player.hidden=false;player.load();
    player.onended=()=>{player.pause();player.hidden=true;if(note)note.textContent='再生が終わりました。もう一度聞く場合は「自分の声を録音」から録音してください。';};
   }
-  if(note)note.textContent='録音完了です。下の再生ボタンで聞き比べ、次に「発音」で採点できます。';
+  if(note)note.textContent='録音を終了しマイクを解放しました。再生で聞き比べた後は「発音」で採点できます。';
  }catch(e){if(note)note.textContent='録音保存エラー：'+e.message}
 }
 async function startCompareRecording(){
@@ -474,7 +477,7 @@ async function startCompareRecording(){
  }catch(e){
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{context?.close()}catch{}
-  releaseCompareMicrophone();
+  await releaseCompareMicrophone();
   if(b){b.disabled=false;b.textContent='🎙 自分の声を録音'}
   if(note)note.textContent='録音開始エラー：'+e.message;
  }finally{compareRecordingBusy=false}
@@ -531,7 +534,7 @@ function listen(kind){
  if(window.compareStream){releaseCompareMicrophone();
   const n=$('voiceNote');if(n)n.textContent='マイクを解放しました。もう一度「発音」を押してください。';return;
  }
- const player=$('comparePlayer');if(player){if(!player.paused)player.pause();player.hidden=true;}
+ resetComparePlayer();
  resetSpeechRecognition();state.latest=null;state.recognitionError='';
  const R=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!R){state.recognitionError='このブラウザでは音声認識に対応していません。';go('results');return}
